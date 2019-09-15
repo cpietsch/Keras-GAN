@@ -1,5 +1,9 @@
 from __future__ import print_function, division
 import scipy
+import os
+import time
+
+#os.environ["KERAS_BACKEND"] = "plaidml.keras.backend"
 
 from keras.datasets import mnist
 from keras_contrib.layers.normalization.instancenormalization import InstanceNormalization
@@ -14,18 +18,19 @@ import matplotlib.pyplot as plt
 import sys
 from data_loader import DataLoader
 import numpy as np
-import os
+
+import cv2
 
 class Pix2Pix():
     def __init__(self):
         # Input shape
-        self.img_rows = 256
-        self.img_cols = 256
+        self.img_rows = 512
+        self.img_cols = 512
         self.channels = 3
         self.img_shape = (self.img_rows, self.img_cols, self.channels)
 
         # Configure data loader
-        self.dataset_name = 'facades'
+        self.dataset_name = 'big'
         self.data_loader = DataLoader(dataset_name=self.dataset_name,
                                       img_res=(self.img_rows, self.img_cols))
 
@@ -57,6 +62,8 @@ class Pix2Pix():
         # Input images and their conditioning images
         img_A = Input(shape=self.img_shape)
         img_B = Input(shape=self.img_shape)
+
+        print(self.img_shape)
 
         # By conditioning on B generate a fake version of A
         fake_A = self.generator(img_B)
@@ -143,7 +150,7 @@ class Pix2Pix():
 
         return Model([img_A, img_B], validity)
 
-    def train(self, epochs, batch_size=1, sample_interval=50):
+    def train(self, epochs=200, batch_size=1, sample_interval=50, save_interval=2):
 
         start_time = datetime.datetime.now()
 
@@ -172,6 +179,7 @@ class Pix2Pix():
 
                 # Train the generators
                 g_loss = self.combined.train_on_batch([imgs_A, imgs_B], [valid, imgs_A])
+                # g_loss = self.combined.train_on_batch([imgs_A, imgs_B], [valid, imgs_A])
 
                 elapsed_time = datetime.datetime.now() - start_time
                 # Plot the progress
@@ -185,20 +193,32 @@ class Pix2Pix():
                 if batch_i % sample_interval == 0:
                     self.sample_images(epoch, batch_i)
 
+                if epoch % save_interval == 0 and batch_i == 0:
+                    print("saving model")
+                    gen_weights_path = os.path.join("", 'saved_models/%s/gen_weights_epoch%s.h5' % (self.dataset_name, epoch))
+                    self.generator.save_weights(gen_weights_path, overwrite=True)
+
+                    disc_weights_path = os.path.join("", 'saved_models/%s/disc_weights_epoch%s.h5' % (self.dataset_name, epoch))
+                    self.discriminator.save_weights(disc_weights_path, overwrite=True)
+
+
     def sample_images(self, epoch, batch_i):
+        print("saving")
         os.makedirs('images/%s' % self.dataset_name, exist_ok=True)
-        r, c = 3, 3
+        r, c = 3, 8
 
-        imgs_A, imgs_B = self.data_loader.load_data(batch_size=3, is_testing=True)
+        imgs_A, imgs_B = self.data_loader.load_data(batch_size=8, is_testing=True)
         fake_A = self.generator.predict(imgs_B)
-
+        
+       # print(fake_A)
+        
         gen_imgs = np.concatenate([imgs_B, fake_A, imgs_A])
 
         # Rescale images 0 - 1
         gen_imgs = 0.5 * gen_imgs + 0.5
 
         titles = ['Condition', 'Generated', 'Original']
-        fig, axs = plt.subplots(r, c)
+        fig, axs = plt.subplots(r, c, figsize=(20, 20), dpi=150, sharex=True, sharey=True)
         cnt = 0
         for i in range(r):
             for j in range(c):
@@ -209,7 +229,15 @@ class Pix2Pix():
         fig.savefig("images/%s/%d_%d.png" % (self.dataset_name, epoch, batch_i))
         plt.close()
 
+        fakes = 0.5 * fake_A + 0.5
+        cnt = 0
+        #print(fakes)
+        for i in range(c):
+            #plt.imshow(pic)
+            plt.imsave("images/%s/%d_%d_%d.png" % (self.dataset_name, epoch, batch_i, i), fakes[i])
+            #cv2.imwrite("images/%s/%d_%d_%d.png" % (self.dataset_name, epoch, batch_i, i), 255*fakes[i])
+
 
 if __name__ == '__main__':
     gan = Pix2Pix()
-    gan.train(epochs=200, batch_size=1, sample_interval=200)
+    gan.train(epochs=400, batch_size=5, sample_interval=100, save_interval=5)
